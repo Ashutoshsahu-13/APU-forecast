@@ -1,0 +1,425 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>APU Power Forecast — Dhanbad</title>
+<link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css" rel="stylesheet">
+<script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+<style>
+  body { background: #f0f2f5; font-family: 'Segoe UI', sans-serif; }
+  .card { border: none; border-radius: 12px; box-shadow: 0 2px 12px rgba(0,0,0,.08); }
+  .metric { font-size: 26px; font-weight: 700; color: #1a1a2e; }
+  .metric-label { font-size: 12px; color: #888; text-transform: uppercase; letter-spacing: .5px; }
+  .chart-container { position: relative; height: 380px; }
+  .weather-chart-container { position: relative; height: 260px; }
+  .status-dot { width: 10px; height: 10px; border-radius: 50%; display: inline-block; margin-right: 6px; }
+  .dot-green { background: #22c55e; }
+  .dot-red   { background: #ef4444; }
+  .holiday-badge { background: #fef3c7; color: #92400e; padding: 2px 8px; border-radius: 99px; font-size: 12px; }
+  .header-bar { background: linear-gradient(135deg, #1e3a5f 0%, #2563eb 100%); color: white; padding: 20px 24px; border-radius: 12px; margin-bottom: 24px; }
+  .spinner-wrap { display:flex; justify-content:center; align-items:center; height:200px; }
+  .error-msg { color: #ef4444; text-align: center; padding: 40px; }
+  #refreshBtn { font-size: 13px; }
+</style>
+</head>
+<body>
+
+<div class="container-fluid p-4">
+
+  <!-- Header -->
+  <div class="header-bar d-flex justify-content-between align-items-center">
+    <div>
+      <h4 class="mb-0 fw-bold">⚡ APU Power Forecast Dashboard</h4>
+      <small class="opacity-75">Dhanbad, Jharkhand — Next 24 Hours (144 blocks × 10 min)</small>
+    </div>
+    <div class="d-flex align-items-center gap-3">
+      <span id="lastUpdated" class="opacity-75" style="font-size:13px"></span>
+      <button class="btn btn-light btn-sm" id="refreshBtn" onclick="loadAll()">↻ Refresh</button>
+    </div>
+  </div>
+
+  <!-- Metric Cards -->
+  <div class="row g-3 mb-4">
+    <div class="col-6 col-md-3">
+      <div class="card p-3">
+        <div class="metric-label">Peak Load</div>
+        <div id="peakLoad" class="metric">--</div>
+        <small id="peakTime" class="text-muted"></small>
+      </div>
+    </div>
+    <div class="col-6 col-md-3">
+      <div class="card p-3">
+        <div class="metric-label">Minimum Load</div>
+        <div id="minLoad" class="metric">--</div>
+        <small id="minTime" class="text-muted"></small>
+      </div>
+    </div>
+    <div class="col-6 col-md-3">
+      <div class="card p-3">
+        <div class="metric-label">Average Load</div>
+        <div id="avgLoad" class="metric">--</div>
+      </div>
+    </div>
+    <div class="col-6 col-md-3">
+      <div class="card p-3">
+        <div class="metric-label">Holiday Today</div>
+        <div id="holidayStatus" class="metric">--</div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Forecast Chart -->
+  <div class="card p-4 mb-4">
+    <div class="d-flex justify-content-between align-items-center mb-3">
+      <h5 class="mb-0">📈 24-Hour Load Forecast</h5>
+      <span class="status-dot dot-green" id="forecastDot"></span>
+    </div>
+    <div id="forecastSpinner" class="spinner-wrap">
+      <div class="spinner-border text-primary"></div>
+    </div>
+    <div class="chart-container" id="forecastChartWrap" style="display:none">
+      <canvas id="loadChart"></canvas>
+    </div>
+    <div id="forecastError" class="error-msg" style="display:none">
+      ⚠️ Could not load forecast. Is the API running at localhost:8000?
+    </div>
+  </div>
+
+  <!-- Weather + Holiday Row -->
+  <div class="row g-3">
+
+    <!-- Weather Chart -->
+    <div class="col-md-8">
+      <div class="card p-4">
+        <h5 class="mb-3">🌤️ Weather Forecast — Dhanbad</h5>
+        <div id="weatherSpinner" class="spinner-wrap">
+          <div class="spinner-border text-warning"></div>
+        </div>
+        <div class="weather-chart-container" id="weatherChartWrap" style="display:none">
+          <canvas id="weatherChart"></canvas>
+        </div>
+        <div id="weatherError" class="error-msg" style="display:none">
+          ⚠️ Could not load weather data.
+        </div>
+        <!-- Weather summary cards -->
+        <div class="row g-2 mt-2" id="weatherSummary" style="display:none">
+          <div class="col-4 text-center">
+            <div style="font-size:13px;color:#888">Avg Temperature</div>
+            <div id="avgTemp" style="font-size:18px;font-weight:700">--</div>
+          </div>
+          <div class="col-4 text-center">
+            <div style="font-size:13px;color:#888">Avg Humidity</div>
+            <div id="avgHum" style="font-size:18px;font-weight:700">--</div>
+          </div>
+          <div class="col-4 text-center">
+            <div style="font-size:13px;color:#888">Avg Cloud Cover</div>
+            <div id="avgCloud" style="font-size:18px;font-weight:700">--</div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Holiday Table -->
+    <div class="col-md-4">
+      <div class="card p-4 h-100">
+        <h5 class="mb-3"> Dhanbad Holiday Info</h5>
+        <div id="holidaySpinner" class="spinner-wrap">
+          <div class="spinner-border text-success"></div>
+        </div>
+        <div id="holidayContent" style="display:none">
+          <div id="holidayAlert" class="mb-3" style="display:none"></div>
+          <table class="table table-sm table-hover">
+            <thead class="table-light">
+              <tr><th>Date</th><th>Holiday</th></tr>
+            </thead>
+            <tbody id="holidayTable"></tbody>
+          </table>
+          <small class="text-muted">Source: Jharkhand state calendar 2017</small>
+        </div>
+        <div id="holidayError" class="error-msg" style="display:none">
+          ⚠️ Could not load holiday data.
+        </div>
+      </div>
+    </div>
+
+  </div>
+</div>
+
+<script>
+const BASE_URL = "http://localhost:8000";
+let loadChart, weatherChart;
+
+// ── Fetch both endpoints in parallel ──────────────────────────
+async function loadAll() {
+  document.getElementById("refreshBtn").disabled = true;
+  document.getElementById("refreshBtn").innerText = "Loading…";
+
+  await Promise.all([loadForecast(), loadWeather()]);
+
+  const now = new Date().toLocaleTimeString();
+  document.getElementById("lastUpdated").innerText = "Updated " + now;
+  document.getElementById("refreshBtn").disabled = false;
+  document.getElementById("refreshBtn").innerText = "↻ Refresh";
+}
+
+// ── ENDPOINT 1: /forecast ─────────────────────────────────────
+async function loadForecast() {
+  try {
+    const res  = await fetch(`${BASE_URL}/forecast`);   // GET not POST
+    if (!res.ok) throw new Error("HTTP " + res.status);
+    const data = await res.json();
+    renderForecast(data.forecast);
+  } catch(e) {
+    console.error("Forecast error:", e);
+    document.getElementById("forecastSpinner").style.display = "none";
+    document.getElementById("forecastError").style.display   = "block";
+    document.getElementById("forecastDot").className = "status-dot dot-red";
+  }
+}
+
+function renderForecast(forecast) {
+  // Use block_label for x-axis (HH:MM format)
+  const labels = forecast.map(x => x.block_label);           // ✅ block_label
+  const loads  = forecast.map(x => x.predicted_load);        // ✅ predicted_load
+
+  // Metric cards
+  const peak   = Math.max(...loads);
+  const min    = Math.min(...loads);
+  const avg    = loads.reduce((a,b) => a+b, 0) / loads.length;
+  const peakItem = forecast[loads.indexOf(peak)];
+  const minItem  = forecast[loads.indexOf(min)];
+
+  document.getElementById("peakLoad").innerText  = (peak/1000).toFixed(1) + " kW";
+  document.getElementById("minLoad").innerText   = (min/1000).toFixed(1) + " kW";
+  document.getElementById("avgLoad").innerText   = (avg/1000).toFixed(1) + " kW";
+  document.getElementById("peakTime").innerText  = "at " + peakItem.block_label;
+  document.getElementById("minTime").innerText   = "at " + minItem.block_label;
+
+  // Holiday status
+  const holidays = forecast.filter(x => x.is_holiday === 1);
+  if (holidays.length > 0) {
+    const name = holidays[0].holiday_name || "Holiday";
+    document.getElementById("holidayStatus").innerHTML =
+      `<span class="holiday-badge">🎉 ${name}</span>`;
+  } else {
+    document.getElementById("holidayStatus").innerText = "None";
+  }
+
+  // Holiday table (from forecast data)
+  renderHolidayFromForecast(forecast);
+
+  // Draw load chart
+  if (loadChart) loadChart.destroy();
+
+  // Find holiday blocks for annotation
+  const holidayBlocks = forecast
+    .map((x,i) => x.is_holiday === 1 ? i : null)
+    .filter(i => i !== null);
+
+  // Color points — holiday blocks orange, rest blue
+  const pointColors = forecast.map(x =>
+    x.is_holiday === 1 ? "rgba(251,146,60,0.9)" : "rgba(37,99,235,0.0)"
+  );
+
+  loadChart = new Chart(document.getElementById("loadChart"), {
+    type: "line",
+    data: {
+      labels: labels,
+      datasets: [{
+        label: "Forecast Load (kW)",
+        data:  loads.map(v => (v/1000).toFixed(2)),
+        borderColor:     "#2563eb",
+        backgroundColor: "rgba(37,99,235,0.08)",
+        borderWidth: 2,
+        tension: 0.4,
+        fill: true,
+        pointRadius: forecast.map(x => x.is_holiday === 1 ? 6 : 0),
+        pointBackgroundColor: pointColors,
+        pointBorderColor:     "rgba(251,146,60,1)",
+      }]
+    },
+    options: {
+      responsive: true,
+      maintainAspectRatio: false,
+      plugins: {
+        legend: { display: true },
+        tooltip: {
+          callbacks: {
+            label: ctx => {
+              const i    = ctx.dataIndex;
+              const item = forecast[i];
+              let tip    = ` ${ctx.parsed.y} kW`;
+              if (item.is_holiday) tip += ` 🎉 ${item.holiday_name}`;
+              return tip;
+            }
+          }
+        }
+      },
+      scales: {
+        x: {
+          ticks: {
+            maxTicksLimit: 24,  // show one per hour
+            font: { size: 11 }
+          },
+          grid: { display: false }
+        },
+        y: {
+          title: { display: true, text: "Load (kW)" },
+          grid:  { color: "rgba(0,0,0,0.05)" }
+        }
+      }
+    }
+  });
+
+  document.getElementById("forecastSpinner").style.display    = "none";
+  document.getElementById("forecastChartWrap").style.display  = "block";
+}
+
+// ── ENDPOINT 2: /weather ─────────────────────────────────────
+async function loadWeather() {
+  try {
+    const res  = await fetch(`${BASE_URL}/weather`);    // ✅ separate endpoint
+    if (!res.ok) throw new Error("HTTP " + res.status);
+    const data = await res.json();
+    renderWeather(data.result);
+  } catch(e) {
+    console.error("Weather error:", e);
+    document.getElementById("weatherSpinner").style.display = "none";
+    document.getElementById("weatherError").style.display   = "block";
+  }
+}
+
+function renderWeather(weather) {
+  const labels = weather.map(x => x.datetime.substring(11, 16)); 
+  const temps  = weather.map(x => x.temperature);       // ✅ temperature
+  const hum    = weather.map(x => x.humidity);          // ✅ humidity
+  const cloud  = weather.map(x => x.cloudcover);        // ✅ cloudcover (not cloud_cover)
+
+  // Summary stats
+  const avg = arr => (arr.reduce((a,b)=>a+b,0)/arr.length);
+  document.getElementById("avgTemp").innerText  = avg(temps).toFixed(1)  + " °C";
+  document.getElementById("avgHum").innerText   = avg(hum).toFixed(1)   + " %";
+  document.getElementById("avgCloud").innerText = avg(cloud).toFixed(1) + " %";
+
+  if (weatherChart) weatherChart.destroy();
+
+  weatherChart = new Chart(document.getElementById("weatherChart"), {
+    type: "line",
+    data: {
+      labels: labels,
+      datasets: [
+        {
+          label:       "Temperature (°C)",
+          data:        temps,
+          borderColor: "#ef4444",
+          backgroundColor: "rgba(239,68,68,0.08)",
+          borderWidth: 2,
+          tension: 0.4,
+          yAxisID: "y1",
+          pointRadius: 0,
+        },
+        {
+          label:       "Humidity (%)",
+          data:        hum,
+          borderColor: "#2563eb",
+          backgroundColor: "rgba(37,99,235,0.06)",
+          borderWidth: 2,
+          tension: 0.4,
+          yAxisID: "y2",
+          pointRadius: 0,
+          borderDash: [4, 2],
+        },
+        {
+          label:       "Cloud Cover (%)",
+          data:        cloud,
+          borderColor: "#94a3b8",
+          borderWidth: 2,
+          tension: 0.4,
+          yAxisID: "y2",
+          pointRadius: 0,
+          borderDash: [2, 2],
+        }
+      ]
+    },
+    options: {
+      responsive: true,
+      maintainAspectRatio: false,
+      plugins: { legend: { position: "top" } },
+      scales: {
+        x: {
+          ticks: { maxTicksLimit: 12, font: { size: 11 } },
+          grid:  { display: false }
+        },
+        y1: {
+          type:     "linear",
+          position: "left",
+          title:    { display: true, text: "Temperature (°C)", color: "#ef4444" },
+          grid:     { color: "rgba(0,0,0,0.04)" }
+        },
+        y2: {
+          type:     "linear",
+          position: "right",
+          title:    { display: true, text: "Humidity / Cloud (%)", color: "#2563eb" },
+          grid:     { drawOnChartArea: false },
+          min: 0, max: 100,
+        }
+      }
+    }
+  });
+
+  document.getElementById("weatherSpinner").style.display    = "none";
+  document.getElementById("weatherChartWrap").style.display  = "block";
+  document.getElementById("weatherSummary").style.display    = "flex";
+}
+
+// ── Holiday table from forecast data ─────────────────────────
+function renderHolidayFromForecast(forecast) {
+  const table = document.getElementById("holidayTable");
+  const alert = document.getElementById("holidayAlert");
+
+  // Get unique holiday days
+  const seen     = new Set();
+  const holidays = [];
+  forecast.forEach(x => {
+    if (x.is_holiday === 1) {
+      const day = x.datetime.substring(0, 10);       // ✅ x.datetime not x.timestamp
+      if (!seen.has(day)) {
+        seen.add(day);
+        holidays.push({ date: day, name: x.holiday_name });
+      }
+    }
+  });
+
+  document.getElementById("holidaySpinner").style.display = "none";
+  document.getElementById("holidayContent").style.display = "block";
+
+  if (holidays.length === 0) {
+    table.innerHTML = `
+      <tr>
+        <td colspan="2" class="text-muted text-center py-3">
+          No holidays in next 24 hours
+        </td>
+      </tr>`;
+    return;
+  }
+
+  // Show alert banner for active holiday
+  alert.style.display = "block";
+  alert.className     = "alert alert-warning py-2";
+  alert.innerHTML     = `🎉 <strong>${holidays[0].name}</strong> — reduced demand expected`;
+
+  table.innerHTML = holidays.map(h => `
+    <tr>
+      <td><small>${h.date}</small></td>
+      <td><span class="holiday-badge">${h.name || "Holiday"}</span></td>
+    </tr>
+  `).join("");
+}
+
+// ── Start ─────────────────────────────────────────────────────
+loadAll();
+</script>
+
+</body>
+</html>
